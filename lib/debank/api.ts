@@ -71,15 +71,24 @@ export function selectEligibleTokens(tokens: Token[]): Token[] {
 
   return [...tokens]
     .filter((token) => {
+      // Only verified wallet tokens
       if (!token.is_verified || !token.is_wallet) return false
 
+      // Must be on a supported chain
       const chainId = getChainIdFromDebankId(token.chain)
       if (!isSupportedChainId(chainId)) return false
 
+      // Must have a valid token address
       if (!token.tokenAddress) return false
+
+      // Filter out native tokens (ETH, MATIC, etc.) - only ERC20
+      if (token.tokenAddress === zeroAddress) return false
+
+      // Must have positive balance
       if (token.amount <= 0) return false
 
       return true
     })
+    // Sort by USD value descending (highest value first for fee token selection)
     .sort((a, b) => b.amount * b.price - a.amount * a.price)
 }

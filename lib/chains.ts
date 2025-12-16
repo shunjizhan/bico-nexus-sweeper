@@ -1,46 +1,66 @@
 import { zeroAddress, type Chain } from 'viem'
-import { arbitrum, base, mainnet, optimism, polygon } from 'viem/chains'
+import {
+  mainnet,
+  polygon,
+  optimism,
+  arbitrum,
+  base,
+  bsc,
+  avalanche,
+  scroll,
+  gnosis,
+  sonic,
+  apeChain,
+  sei,
+  worldchain,
+  unichain,
+  plasma,
+  monad,
+  hyperEvm,
+  katana,
+} from 'viem/chains'
 
 type ChainId = number
 
 interface SupportedChainDefinition {
   chain: Chain
-  identifiers: readonly string[]
   debankId: string
   debankAliases: readonly string[]
 }
 
+// All chains supported by MEE
+//
+// DeBank Support Status (as of Dec 2025):
+// ✓ WITH DeBank support (tokens auto-detect):
+//   - Ethereum, Base, Polygon, Arbitrum, OP Mainnet, BNB Smart Chain,
+//     Sonic, Scroll, Gnosis, Avalanche
+//
+// ✗ WITHOUT DeBank support (tokens won't auto-detect):
+//   - Ape Chain, Sei, World Chain, Unichain, Plasma, Monad, HyperEVM, Katana
+//   - These newer chains are not yet indexed by DeBank
+//
+// Reference: https://docs.cloud.debank.com/en/readme/api-pro-reference/chain
 const SUPPORTED_CHAIN_DEFINITIONS: readonly SupportedChainDefinition[] = [
-  {
-    chain: mainnet,
-    debankId: 'eth',
-    debankAliases: ['eth', 'ethereum'],
-    identifiers: ['ethereum', 'eth', 'mainnet'],
-  },
-  {
-    chain: polygon,
-    debankId: 'matic',
-    debankAliases: ['matic', 'polygon'],
-    identifiers: ['polygon', 'matic'],
-  },
-  {
-    chain: optimism,
-    debankId: 'op',
-    debankAliases: ['op', 'optimism'],
-    identifiers: ['optimism'],
-  },
-  {
-    chain: arbitrum,
-    debankId: 'arb',
-    debankAliases: ['arb', 'arbitrum'],
-    identifiers: ['arbitrum'],
-  },
-  {
-    chain: base,
-    debankId: 'base',
-    debankAliases: ['base'],
-    identifiers: ['base'],
-  },
+  // Chains WITH DeBank support
+  { chain: mainnet, debankId: 'eth', debankAliases: ['eth', 'ethereum'] },
+  { chain: base, debankId: 'base', debankAliases: ['base'] },
+  { chain: polygon, debankId: 'matic', debankAliases: ['matic', 'polygon'] },
+  { chain: arbitrum, debankId: 'arb', debankAliases: ['arb', 'arbitrum'] },
+  { chain: optimism, debankId: 'op', debankAliases: ['op', 'optimism'] },
+  { chain: bsc, debankId: 'bsc', debankAliases: ['bsc', 'bnb'] },
+  { chain: sonic, debankId: 'sonic', debankAliases: ['sonic'] },
+  { chain: scroll, debankId: 'scrl', debankAliases: ['scrl', 'scroll'] },
+  { chain: gnosis, debankId: 'xdai', debankAliases: ['xdai', 'gnosis'] },
+  { chain: avalanche, debankId: 'avax', debankAliases: ['avax', 'avalanche'] },
+  // Chains WITHOUT DeBank support (kept for future compatibility)
+  { chain: apeChain, debankId: 'ape', debankAliases: ['ape', 'apechain'] },
+  { chain: sei, debankId: 'sei', debankAliases: ['sei'] },
+  { chain: worldchain, debankId: 'world', debankAliases: ['world', 'worldchain'] },
+  { chain: unichain, debankId: 'unichain', debankAliases: ['unichain', 'uni'] },
+  { chain: plasma, debankId: 'plasma', debankAliases: ['plasma'] },
+  { chain: monad, debankId: 'monad', debankAliases: ['monad'] },
+  { chain: hyperEvm, debankId: 'hyperevm', debankAliases: ['hyperevm', 'hyperliquid'] },
+  { chain: katana, debankId: 'katana', debankAliases: ['katana'] },
 ] as const
 
 const normalizeIdentifier = (value: string): string => value.trim().toLowerCase()
@@ -55,6 +75,7 @@ export const SUPPORTED_CHAIN_IDS: readonly ChainId[] = SUPPORTED_CHAIN_DEFINITIO
 
 const SUPPORTED_CHAIN_ID_SET = new Set<ChainId>(SUPPORTED_CHAIN_IDS)
 
+// All DeBank chain IDs we support (for fetching)
 export const SUPPORTED_DEBANK_CHAIN_IDS: readonly string[] = SUPPORTED_CHAIN_DEFINITIONS.map(
   (d) => normalizeIdentifier(d.debankId)
 )
@@ -86,12 +107,12 @@ export function isSupportedChainId(chainId: number | null | undefined): chainId 
   return typeof chainId === 'number' && SUPPORTED_CHAIN_ID_SET.has(chainId)
 }
 
-export function getChainMetadata(chainId: ChainId): Chain | undefined {
+export function getChainById(chainId: ChainId): Chain | undefined {
   return CHAINS_BY_ID.get(chainId)
 }
 
 export function getChainName(chainId: ChainId): string {
-  return getChainMetadata(chainId)?.name ?? `Chain ${chainId}`
+  return getChainById(chainId)?.name ?? `Chain ${chainId}`
 }
 
 export function getDebankChainIdentifier(chainId: ChainId): string | undefined {
@@ -110,4 +131,4 @@ export function getChainIdFromDebankId(debankId: string): ChainId | undefined {
   return DEBANK_IDENTIFIER_TO_CHAIN_ID.get(normalized)
 }
 
-export { arbitrum, base, mainnet, optimism, polygon }
+export { mainnet, polygon, optimism, arbitrum, base, bsc, avalanche, scroll, gnosis, sonic, apeChain, sei, worldchain, unichain, plasma, monad, hyperEvm, katana }

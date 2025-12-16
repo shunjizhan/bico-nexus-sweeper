@@ -3,13 +3,13 @@
 import * as React from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useWalletClient } from 'wagmi'
-import { http, parseUnits, zeroAddress, zeroHash, type Address } from 'viem'
+import { http, type Address } from 'viem'
 import {
   ArrowDown,
   Check,
   Copy,
   ExternalLink,
-  HandCoins,
+  History,
   Loader2,
   RefreshCw,
   Wallet,
@@ -31,6 +31,46 @@ import { fetchPortfolio, selectEligibleTokens } from '@/lib/debank/api'
 import type { Token } from '@/lib/debank/types'
 
 type SweepState = 'idle' | 'quote' | 'awaiting-signature' | 'executing' | 'success' | 'error'
+
+interface SweepHistoryEntry {
+  hash: string
+  timestamp: number
+  tokenCount: number
+}
+
+const SWEEP_HISTORY_KEY = 'nexus-sweeper-history'
+const MAX_HISTORY_ENTRIES = 20
+
+const loadSweepHistory = (): SweepHistoryEntry[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = localStorage.getItem(SWEEP_HISTORY_KEY)
+    if (!stored) return []
+    const parsed = JSON.parse(stored) as SweepHistoryEntry[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const saveSweepHistory = (history: SweepHistoryEntry[]): void => {
+  if (typeof window === 'undefined') return
+  try {
+    const trimmed = history.slice(0, MAX_HISTORY_ENTRIES)
+    localStorage.setItem(SWEEP_HISTORY_KEY, JSON.stringify(trimmed))
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+const addToSweepHistory = (entry: SweepHistoryEntry): SweepHistoryEntry[] => {
+  const current = loadSweepHistory()
+  // Avoid duplicates
+  if (current.some((e) => e.hash === entry.hash)) return current
+  const updated = [entry, ...current].slice(0, MAX_HISTORY_ENTRIES)
+  saveSweepHistory(updated)
+  return updated
+}
 
 const SWEEP_STATUS_MESSAGES: Record<SweepState, string | null> = {
   idle: null,
@@ -127,6 +167,12 @@ export const NexusSweeper: React.FC = () => {
   const [sweepState, setSweepState] = React.useState<SweepState>('idle')
   const [sweepError, setSweepError] = React.useState<string | null>(null)
   const [supertxHash, setSupertxHash] = React.useState<string | null>(null)
+  const [sweepHistory, setSweepHistory] = React.useState<SweepHistoryEntry[]>([])
+
+  // Load sweep history on mount
+  React.useEffect(() => {
+    setSweepHistory(loadSweepHistory())
+  }, [])
 
   // Resolve Nexus account
   const resolveNexusAccount = React.useCallback(async () => {
@@ -249,38 +295,21 @@ export const NexusSweeper: React.FC = () => {
         const nexusAddr = nexusAccount.addressOn(chainId)
         if (!nexusAddr) continue
 
-        // Use native transfer for native tokens
-        if (tokenAddress === zeroAddress) {
-          const instruction = await nexusAccount.buildComposable({
-            type: 'nativeTokenTransfer',
-            data: {
-              chainId,
-              to: walletAddress,
-              value: runtimeERC20BalanceOf({
-                targetAddress: nexusAddr,
-                tokenAddress: zeroAddress,
-              }),
-              gasLimit: 50000n,
-            },
-          })
-          instructions.push(instruction)
-        } else {
-          // ERC20 transfer
-          const instruction = await nexusAccount.buildComposable({
-            type: 'transfer',
-            data: {
-              chainId,
+        // Build ERC20 transfer instruction
+        const instruction = await nexusAccount.buildComposable({
+          type: 'transfer',
+          data: {
+            chainId,
+            tokenAddress,
+            amount: runtimeERC20BalanceOf({
+              targetAddress: nexusAddr,
               tokenAddress,
-              amount: runtimeERC20BalanceOf({
-                targetAddress: nexusAddr,
-                tokenAddress,
-              }),
-              recipient: walletAddress,
-              gasLimit: 100000n,
-            },
-          })
-          instructions.push(instruction)
-        }
+            }),
+            recipient: walletAddress,
+            gasLimit: 100000n,
+          },
+        })
+        instructions.push(instruction)
       }
 
       if (instructions.length === 0) {
@@ -289,8 +318,8 @@ export const NexusSweeper: React.FC = () => {
 
       setSweepState('awaiting-signature')
 
-      // Get quote - use first non-native token as fee token
-      const feeToken = tokens.find((t) => t.tokenAddress && t.tokenAddress !== zeroAddress) ?? tokens[0]
+      // Use highest USD value token as fee token (tokens are already sorted by value descending)
+      const feeToken = tokens[0]
       const feeChainId = getChainIdFromDebankId(feeToken.chain)
 
       if (!feeChainId || !feeToken.tokenAddress) {
@@ -317,6 +346,13 @@ export const NexusSweeper: React.FC = () => {
 
       if (receipt.transactionStatus === 'MINED_SUCCESS') {
         setSweepState('success')
+        // Save to history
+        const newHistory = addToSweepHistory({
+          hash,
+          timestamp: Date.now(),
+          tokenCount: tokens.length,
+        })
+        setSweepHistory(newHistory)
         // Refresh tokens after successful sweep
         setTimeout(() => void fetchTokens(), 3000)
       } else {
@@ -354,7 +390,7 @@ export const NexusSweeper: React.FC = () => {
             Connect your wallet to view and sweep tokens from your Nexus account.
           </p>
           <div className="flex justify-center">
-            <ConnectButton />
+            <ConnectButton chainStatus="none" />
           </div>
         </CardContent>
       </Card>
@@ -369,7 +405,7 @@ export const NexusSweeper: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">Nexus Sweeper</h1>
           <p className="text-slate-500 text-sm mt-1">Sweep tokens from your Nexus account</p>
         </div>
-        <ConnectButton />
+        <ConnectButton chainStatus="none" />
       </div>
 
       {/* Nexus Account Info */}
@@ -506,6 +542,72 @@ export const NexusSweeper: React.FC = () => {
                 </>
               )}
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sweep History */}
+      {sweepHistory.length > 0 && (
+        <Card>
+          <CardHeader className="flex-row items-center gap-2">
+            <History className="h-5 w-5 text-slate-400" />
+            <CardTitle>Sweep History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {sweepHistory.map((entry) => {
+                const isLatest = entry.hash === supertxHash
+                const date = new Date(entry.timestamp)
+                const formattedDate = date.toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })
+                const formattedTime = date.toLocaleTimeString(undefined, {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+
+                return (
+                  <div
+                    key={entry.hash}
+                    className={cn(
+                      'rounded-xl border px-4 py-3 transition-colors',
+                      isLatest && sweepState === 'success'
+                        ? 'border-emerald-200 bg-emerald-50'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <a
+                          className="inline-flex items-center gap-1 font-mono text-sm font-medium text-slate-700 underline-offset-4 transition-colors hover:text-slate-900 hover:underline"
+                          href={`https://meescan.biconomy.io/details/${entry.hash}`}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          {formatSupertxHash(entry.hash)}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                        {isLatest && sweepState === 'success' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                            <Check className="h-3 w-3" />
+                            Success
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right text-xs text-slate-500">
+                        <p>{formattedDate}</p>
+                        <p>{formattedTime}</p>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {entry.tokenCount} token{entry.tokenCount !== 1 ? 's' : ''} swept
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
           </CardContent>
         </Card>
       )}
