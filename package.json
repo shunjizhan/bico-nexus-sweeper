@@ -1,17 +1,27 @@
 {
-  "name": "my-app",
+  "name": "bico-nexus-sweeper",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@biconomy/abstractjs": "1.1.18",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@rainbow-me/rainbowkit": "2.2.8",
+    "@tanstack/react-query": "^5.90.12",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.561.0",
     "next": "16.0.10",
     "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "react-dom": "19.2.1",
+    "tailwind-merge": "^3.4.0",
+    "viem": "^2.42.1",
+    "wagmi": "2.18.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
