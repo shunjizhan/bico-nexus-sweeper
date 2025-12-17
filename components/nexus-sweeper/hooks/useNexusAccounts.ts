@@ -8,6 +8,7 @@ import {
 } from '@biconomy/abstractjs'
 
 import { base } from '@/lib/chains'
+import { getRpcUrl } from '@/lib/rpc'
 
 interface UseNexusAccountsReturn {
   nexusAddress210: Address | null
@@ -42,7 +43,7 @@ export const useNexusAccounts = (): UseNexusAccountsReturn => {
         chainConfigurations: [
           {
             chain: base,
-            transport: http(),
+            transport: http(getRpcUrl(base.id)),
             version: getMEEVersion(MEEVersion.V2_1_0),
           },
         ],
@@ -55,7 +56,7 @@ export const useNexusAccounts = (): UseNexusAccountsReturn => {
         chainConfigurations: [
           {
             chain: base,
-            transport: http(),
+            transport: http(getRpcUrl(base.id)),
             version: getMEEVersion(MEEVersion.V2_2_0),
           },
         ],

@@ -1,4 +1,5 @@
 import * as React from 'react'
+import Link from 'next/link'
 import { ArrowDown, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -46,12 +47,6 @@ export const SweepSection: React.FC<SweepSectionProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <CardTitle>Available Tokens</CardTitle>
-            <span className={cn(
-              'rounded-full px-2 py-0.5 text-xs font-semibold',
-              isV2 ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
-            )}>
-              v{version}
-            </span>
           </div>
           {tokens.length > 0 && (
             <p className="text-slate-500 text-sm mt-1">
@@ -59,15 +54,23 @@ export const SweepSection: React.FC<SweepSectionProps> = ({
             </p>
           )}
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onRefresh}
-          disabled={loading || disabled}
-        >
-          <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={loading || disabled}
+          >
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Link
+            href="/manual"
+            className="text-xs text-slate-500 hover:text-emerald-600 transition-colors"
+          >
+            Can&apos;t find tokens?
+          </Link>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (

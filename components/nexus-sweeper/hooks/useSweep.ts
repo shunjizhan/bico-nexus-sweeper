@@ -11,6 +11,7 @@ import {
 } from '@biconomy/abstractjs'
 
 import { getChainIdFromDebankId, isSupportedChainId, SUPPORTED_CHAINS } from '@/lib/chains'
+import { getRpcUrl } from '@/lib/rpc'
 import type { Token } from '@/lib/debank/types'
 
 import type { SelectedVersion, SweepHistoryEntry, SweepState } from '../types'
@@ -106,12 +107,12 @@ export const useSweep = ({
       // Get unique chain IDs from tokens
       const uniqueChainIds = [...new Set(tokens.map((t) => getChainIdFromDebankId(t.chain)).filter(isSupportedChainId))]
 
-      // Build chain configurations
+      // Build chain configurations with Alchemy RPCs
       const chainConfigurations = uniqueChainIds.map((chainId) => {
         const chain = SUPPORTED_CHAINS.find((c) => c.id === chainId)!
         return {
           chain,
-          transport: http(),
+          transport: http(getRpcUrl(chainId)),
           version: getMEEVersion(meeVersion),
           versionCheck: false,
         }
