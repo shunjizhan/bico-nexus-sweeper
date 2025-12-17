@@ -25,3 +25,12 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Ensure RainbowKit modals and dropdowns are always visible */
+[data-rk] {
+  --rk-modal-z-index: 9999;
+}
+
+div[role="dialog"] {
+  z-index: 9999 !important;
+}
