@@ -9,15 +9,13 @@ import {
   getMEEVersion,
   toMultichainNexusAccount,
   createMeeClient,
-  runtimeERC20BalanceOf,
-  type InstructionLike,
 } from '@biconomy/abstractjs'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { getRpcUrl } from '@/lib/rpc'
-import { ETH_FORWARDER, encodeForwardCall } from '@/lib/native'
+import { buildSweepInstructions, fromTokenInfo, type SweepToken } from '@/lib/sweep'
 import { SUPPORTED_CHAINS, SUPPORTED_DEBANK_CHAIN_IDS, isSupportedChainId, getChainIdFromDebankId } from '@/lib/chains'
 import { fetchPortfolio, selectEligibleTokens } from '@/lib/debank/api'
 import type { Token } from '@/lib/debank/types'
@@ -219,48 +217,17 @@ export const ManualSweeper: React.FC = () => {
         account: nexusAccount,
       })
 
-      // Build sweep instructions
-      const instructions: InstructionLike[] = []
+      // Convert manual tokens to normalized SweepToken format
+      const sweepTokens: SweepToken[] = tokensToSweep
+        .filter((t) => isSupportedChainId(t.chainId))
+        .map((token) => fromTokenInfo(token))
 
-      for (const token of tokensToSweep) {
-        if (!isSupportedChainId(token.chainId)) continue
-
-        const nexusAddr = nexusAccount.addressOn(token.chainId)
-        if (!nexusAddr) continue
-
-        if (token.isNative) {
-          // Native token - use rawCalldata type with ETH_FORWARDER
-          // Encode the forward(recipient) call and send with value
-          const calldata = encodeForwardCall(walletAddress)
-          const instruction = await nexusAccount.buildComposable({
-            type: 'rawCalldata',
-            data: {
-              to: ETH_FORWARDER,
-              calldata,
-              chainId: token.chainId,
-              value: token.balance,
-              gasLimit: 300000n,
-            },
-          })
-          instructions.push(instruction)
-        } else {
-          // ERC20 token - use transfer type
-          const instruction = await nexusAccount.buildComposable({
-            type: 'transfer',
-            data: {
-              chainId: token.chainId,
-              tokenAddress: token.address,
-              amount: runtimeERC20BalanceOf({
-                targetAddress: nexusAddr,
-                tokenAddress: token.address,
-              }),
-              recipient: walletAddress,
-              gasLimit: 100000n,
-            },
-          })
-          instructions.push(instruction)
-        }
-      }
+      // Build sweep instructions using shared utility (same as auto mode)
+      const instructions = await buildSweepInstructions(
+        nexusAccount,
+        walletAddress,
+        sweepTokens
+      )
 
       if (instructions.length === 0) {
         throw new Error('No tokens to sweep')
@@ -296,8 +263,11 @@ export const ManualSweeper: React.FC = () => {
         const result = await meeClient.executeSignedQuote({ signedQuote })
         hash = result.hash
       } else {
-        // v2.1.0: Smart account mode - use first sweepable token as fee
-        const feeToken = tokensToSweep[0]
+        // v2.1.0: Smart account mode
+        // Prefer ERC20 tokens for fee to avoid conflict when native token is both fee and being swept
+        // (Native sweep uses fixed amount, but MEE deducts fees first, causing insufficient balance)
+        const erc20Tokens = tokensToSweep.filter((t) => !t.isNative)
+        const feeToken = erc20Tokens.length > 0 ? erc20Tokens[0] : tokensToSweep[0]
 
         const quote = await meeClient.getQuote({
           instructions,
