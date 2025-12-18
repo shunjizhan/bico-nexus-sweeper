@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Coins } from 'lucide-react'
 
 import { formatUSD } from '@/lib/utils'
 import { getChainIdFromDebankId, getChainName } from '@/lib/chains'
@@ -36,7 +37,14 @@ export const TokenGrid: React.FC<TokenGridProps> = ({ tokens }) => (
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate font-medium text-slate-900">{tokenSymbol}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="truncate font-medium text-slate-900">{tokenSymbol}</p>
+              {token.isNative && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                  <Coins className="h-2.5 w-2.5" />
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500">{chainName}</p>
           </div>
           <div className="text-right">

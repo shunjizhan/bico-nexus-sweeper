@@ -27,6 +27,7 @@ export interface Token {
   amount: number
   raw_amount?: number
   tokenAddress?: Address | null
+  isNative?: boolean
 }
 
 export interface TotalBalance {

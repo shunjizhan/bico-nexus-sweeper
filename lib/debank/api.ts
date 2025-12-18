@@ -23,16 +23,16 @@ const extractAddressFromValue = (value: string | null | undefined): Address | nu
   return null
 }
 
-const resolveTokenAddress = (token: Token): Address | null => {
+const resolveTokenAddress = (token: Token): { address: Address | null; isNative: boolean } => {
   const directMatch = extractAddressFromValue(token.id)
-  if (directMatch) return directMatch
+  if (directMatch) return { address: directMatch, isNative: false }
 
   // Native token
   if (token.id === token.chain) {
-    return zeroAddress
+    return { address: zeroAddress, isNative: true }
   }
 
-  return null
+  return { address: null, isNative: false }
 }
 
 export async function fetchPortfolio(address: Address, chainIds?: string[]): Promise<CompletePortfolio> {
@@ -45,10 +45,14 @@ export async function fetchPortfolio(address: Address, chainIds?: string[]): Pro
       .then((res) => res.json() as Promise<Token[]>),
   ])
 
-  const tokensWithAddress = tokens.map((token) => ({
-    ...token,
-    tokenAddress: resolveTokenAddress(token),
-  }))
+  const tokensWithAddress = tokens.map((token) => {
+    const { address, isNative } = resolveTokenAddress(token)
+    return {
+      ...token,
+      tokenAddress: address,
+      isNative,
+    }
+  })
 
   return {
     totalBalance,
@@ -66,7 +70,7 @@ export function calculatePortfolioSummary(portfolio: CompletePortfolio): Portfol
   }
 }
 
-export function selectEligibleTokens(tokens: Token[]): Token[] {
+export function selectEligibleTokens(tokens: Token[], includeNative = true): Token[] {
   if (!tokens?.length) return []
 
   return [...tokens]
@@ -81,8 +85,8 @@ export function selectEligibleTokens(tokens: Token[]): Token[] {
       // Must have a valid token address
       if (!token.tokenAddress) return false
 
-      // Filter out native tokens (ETH, MATIC, etc.) - only ERC20
-      if (token.tokenAddress === zeroAddress) return false
+      // Optionally filter out native tokens
+      if (!includeNative && token.tokenAddress === zeroAddress) return false
 
       // Must have positive balance
       if (token.amount <= 0) return false

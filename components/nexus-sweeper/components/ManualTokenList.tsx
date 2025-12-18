@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { AlertTriangle, Trash2 } from 'lucide-react'
+import { AlertTriangle, Coins, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { getChainName } from '@/lib/chains'
@@ -51,6 +51,12 @@ export const ManualTokenList: React.FC<ManualTokenListProps> = ({
               <div className="flex items-center gap-2">
                 <span className="font-medium text-slate-900">{token.symbol}</span>
                 <span className="text-xs text-slate-500">{token.name}</span>
+                {token.isNative && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                    <Coins className="h-3 w-3" />
+                    Native
+                  </span>
+                )}
                 {!token.isSupported && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-600">
                     <AlertTriangle className="h-3 w-3" />

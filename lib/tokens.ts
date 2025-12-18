@@ -1,6 +1,7 @@
-import { createPublicClient, http, type Address, formatUnits, type Chain } from 'viem'
+import { createPublicClient, http, zeroAddress, type Address, formatUnits, type Chain } from 'viem'
 
 import { SUPPORTED_CHAINS } from './chains'
+import { isNativeToken, getNativeTokenInfo } from './native'
 import { getRpcUrl } from './rpc'
 
 const ERC20_ABI = [
@@ -43,6 +44,7 @@ export interface TokenInfo {
   balance: bigint
   formattedBalance: string
   isSupported: boolean
+  isNative: boolean
 }
 
 // Create a dynamic chain config for any chainId
@@ -75,7 +77,29 @@ export const fetchTokenInfo = async (
     transport: http(rpcUrl),
   })
 
+  // Check if this is a native token
+  const isNative = isNativeToken(tokenAddress)
+
   try {
+    if (isNative) {
+      // Native token - use getBalance and chain info
+      const nativeInfo = getNativeTokenInfo(chainId)
+      const balance = await client.getBalance({ address: ownerAddress })
+
+      return {
+        chainId,
+        address: zeroAddress,
+        symbol: nativeInfo.symbol,
+        name: nativeInfo.name,
+        decimals: nativeInfo.decimals,
+        balance,
+        formattedBalance: formatUnits(balance, nativeInfo.decimals),
+        isSupported,
+        isNative: true,
+      }
+    }
+
+    // ERC20 token - use contract calls
     const [symbol, name, decimals, balance] = await Promise.all([
       client.readContract({
         address: tokenAddress,
@@ -109,6 +133,7 @@ export const fetchTokenInfo = async (
       balance,
       formattedBalance: formatUnits(balance, decimals),
       isSupported,
+      isNative: false,
     }
   } catch (error) {
     console.error('Failed to fetch token info:', error)

@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useAccount, useChainId, useSwitchChain, useWalletClient } from 'wagmi'
-import { http, type Address, type Hex } from 'viem'
+import { http, parseUnits, type Address, type Hex } from 'viem'
 import {
   MEEVersion,
   getMEEVersion,
@@ -12,6 +12,7 @@ import {
 
 import { getChainIdFromDebankId, isSupportedChainId, SUPPORTED_CHAINS } from '@/lib/chains'
 import { getRpcUrl } from '@/lib/rpc'
+import { ETH_FORWARDER, encodeForwardCall, isNativeToken } from '@/lib/native'
 import type { Token } from '@/lib/debank/types'
 
 import type { SelectedVersion, SweepHistoryEntry, SweepState } from '../types'
@@ -142,20 +143,39 @@ export const useSweep = ({
         const nexusAddr = nexusAccount.addressOn(chainId)
         if (!nexusAddr) continue
 
-        const instruction = await nexusAccount.buildComposable({
-          type: 'transfer',
-          data: {
-            chainId,
-            tokenAddress,
-            amount: runtimeERC20BalanceOf({
-              targetAddress: nexusAddr,
+        if (token.isNative || isNativeToken(tokenAddress)) {
+          // Native token - use rawCalldata type with ETH_FORWARDER
+          // Convert amount from DeBank (human readable) to wei
+          const nativeAmount = parseUnits(token.amount.toString(), token.decimals)
+          const calldata = encodeForwardCall(walletAddress)
+          const instruction = await nexusAccount.buildComposable({
+            type: 'rawCalldata',
+            data: {
+              to: ETH_FORWARDER,
+              calldata,
+              chainId,
+              value: nativeAmount,
+              gasLimit: 300000n,
+            },
+          })
+          instructions.push(instruction)
+        } else {
+          // ERC20 token - use transfer type
+          const instruction = await nexusAccount.buildComposable({
+            type: 'transfer',
+            data: {
+              chainId,
               tokenAddress,
-            }),
-            recipient: walletAddress,
-            gasLimit: 100000n,
-          },
-        })
-        instructions.push(instruction)
+              amount: runtimeERC20BalanceOf({
+                targetAddress: nexusAddr,
+                tokenAddress,
+              }),
+              recipient: walletAddress,
+              gasLimit: 100000n,
+            },
+          })
+          instructions.push(instruction)
+        }
       }
 
       if (instructions.length === 0) {

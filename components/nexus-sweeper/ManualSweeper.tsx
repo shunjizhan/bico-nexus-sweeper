@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { getRpcUrl } from '@/lib/rpc'
+import { ETH_FORWARDER, encodeForwardCall } from '@/lib/native'
 import { SUPPORTED_CHAINS, SUPPORTED_DEBANK_CHAIN_IDS, isSupportedChainId, getChainIdFromDebankId } from '@/lib/chains'
 import { fetchPortfolio, selectEligibleTokens } from '@/lib/debank/api'
 import type { Token } from '@/lib/debank/types'
@@ -227,20 +228,38 @@ export const ManualSweeper: React.FC = () => {
         const nexusAddr = nexusAccount.addressOn(token.chainId)
         if (!nexusAddr) continue
 
-        const instruction = await nexusAccount.buildComposable({
-          type: 'transfer',
-          data: {
-            chainId: token.chainId,
-            tokenAddress: token.address,
-            amount: runtimeERC20BalanceOf({
-              targetAddress: nexusAddr,
+        if (token.isNative) {
+          // Native token - use rawCalldata type with ETH_FORWARDER
+          // Encode the forward(recipient) call and send with value
+          const calldata = encodeForwardCall(walletAddress)
+          const instruction = await nexusAccount.buildComposable({
+            type: 'rawCalldata',
+            data: {
+              to: ETH_FORWARDER,
+              calldata,
+              chainId: token.chainId,
+              value: token.balance,
+              gasLimit: 300000n,
+            },
+          })
+          instructions.push(instruction)
+        } else {
+          // ERC20 token - use transfer type
+          const instruction = await nexusAccount.buildComposable({
+            type: 'transfer',
+            data: {
+              chainId: token.chainId,
               tokenAddress: token.address,
-            }),
-            recipient: walletAddress,
-            gasLimit: 100000n,
-          },
-        })
-        instructions.push(instruction)
+              amount: runtimeERC20BalanceOf({
+                targetAddress: nexusAddr,
+                tokenAddress: token.address,
+              }),
+              recipient: walletAddress,
+              gasLimit: 100000n,
+            },
+          })
+          instructions.push(instruction)
+        }
       }
 
       if (instructions.length === 0) {
