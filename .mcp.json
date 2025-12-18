@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["chrome-devtools-mcp@latest", "--cdp-url", "http://localhost:9222", "--isolated"]
+    }
+  }
+}

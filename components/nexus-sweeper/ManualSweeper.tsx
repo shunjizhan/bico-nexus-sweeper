@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { getRpcUrl } from '@/lib/rpc'
 import { buildSweepInstructions, fromTokenInfo, type SweepToken } from '@/lib/sweep'
-import { SUPPORTED_CHAINS, SUPPORTED_DEBANK_CHAIN_IDS, isSupportedChainId, getChainIdFromDebankId } from '@/lib/chains'
+import { SUPPORTED_CHAINS, SUPPORTED_DEBANK_CHAIN_IDS, isSupportedChainId, getChainIdFromDebankId, getDebankChainIdentifier } from '@/lib/chains'
 import { fetchPortfolio, selectEligibleTokens } from '@/lib/debank/api'
 import type { Token } from '@/lib/debank/types'
 import { fetchTokenInfo, type TokenInfo } from '@/lib/tokens'
@@ -163,8 +163,13 @@ export const ManualSweeper: React.FC = () => {
       return
     }
 
-    // For v2.2.0, check fee token and switch chain if needed
-    if (!isV210) {
+    // Check if only native tokens exist (no ERC20)
+    const hasErc20Tokens = tokensToSweep.some((t) => !t.isNative)
+    // Use EOA mode when: v2.2.0 (always) OR v2.1.0 with only native tokens
+    const useEoaMode = !isV210 || !hasErc20Tokens
+
+    // For EOA mode, check fee token and switch chain if needed
+    if (useEoaMode) {
       if (!selectedFeeToken) {
         setSweepError('Please select a fee token from your wallet.')
         return
@@ -177,7 +182,7 @@ export const ManualSweeper: React.FC = () => {
       if (currentChainId !== feeTokenChainId) {
         try {
           await switchChainAsync({ chainId: feeTokenChainId })
-          return
+          // Continue with sweep after successful switch
         } catch {
           setSweepError('Failed to switch network. Please try again.')
           return
@@ -193,7 +198,17 @@ export const ManualSweeper: React.FC = () => {
       const meeVersion = isV210 ? MEEVersion.V2_1_0 : MEEVersion.V2_2_0
 
       // Get unique chain IDs from tokens
-      const uniqueChainIds = [...new Set(tokensToSweep.map((t) => t.chainId).filter(isSupportedChainId))]
+      const tokenChainIds = tokensToSweep.map((t) => t.chainId).filter(isSupportedChainId)
+
+      // For EOA mode, also include the fee token's chain (needed for deployment lookup)
+      if (useEoaMode && selectedFeeToken) {
+        const feeChainId = getChainIdFromDebankId(selectedFeeToken.chain)
+        if (feeChainId && isSupportedChainId(feeChainId)) {
+          tokenChainIds.push(feeChainId)
+        }
+      }
+
+      const uniqueChainIds = [...new Set(tokenChainIds)]
 
       // Build chain configurations with Alchemy RPCs
       const chainConfigurations = uniqueChainIds.map((chainId) => {
@@ -235,15 +250,16 @@ export const ManualSweeper: React.FC = () => {
 
       let hash: Hex
 
-      if (!isV210 && selectedFeeToken) {
-        // v2.2.0: EOA trigger mode
+      if (useEoaMode && selectedFeeToken) {
+        // EOA trigger mode: v2.2.0 OR v2.1.0 with only native tokens
+        // Fee comes from EOA wallet, allowing full Nexus balance to be swept
         const feeTokenChainId = getChainIdFromDebankId(selectedFeeToken.chain)
 
         if (!feeTokenChainId || !selectedFeeToken.tokenAddress) {
           throw new Error('No valid fee token found')
         }
 
-        const onChainQuote = await meeClient.getOnChainQuote({
+        const onChainQuote = await meeClient.getFusionQuote({
           instructions,
           feeToken: {
             address: selectedFeeToken.tokenAddress,
@@ -263,11 +279,10 @@ export const ManualSweeper: React.FC = () => {
         const result = await meeClient.executeSignedQuote({ signedQuote })
         hash = result.hash
       } else {
-        // v2.1.0: Smart account mode
-        // Prefer ERC20 tokens for fee to avoid conflict when native token is both fee and being swept
-        // (Native sweep uses fixed amount, but MEE deducts fees first, causing insufficient balance)
+        // Smart Account mode: v2.1.0 with ERC20 tokens available
+        // Use first ERC20 token as fee
         const erc20Tokens = tokensToSweep.filter((t) => !t.isNative)
-        const feeToken = erc20Tokens.length > 0 ? erc20Tokens[0] : tokensToSweep[0]
+        const feeToken = erc20Tokens[0]
 
         const quote = await meeClient.getQuote({
           instructions,
@@ -312,9 +327,12 @@ export const ManualSweeper: React.FC = () => {
   const isSweepBusy = sweepState === 'quote' || sweepState === 'awaiting-signature' || sweepState === 'executing'
   // Only sweep tokens that are on supported chains AND have balance
   const sweepableTokens = manualTokens.filter((t) => t.balance > 0n && t.isSupported)
-  const canSweep = isV210
-    ? sweepableTokens.length > 0
-    : sweepableTokens.length > 0 && feeTokenOptions.length > 0
+  // Check if only native tokens exist in sweepable tokens
+  const onlyNativeTokens = sweepableTokens.length > 0 && sweepableTokens.every((t) => t.isNative)
+  // Show fee selector when: v2.2.0 OR v2.1.0 with only native tokens
+  const needsFeeSelector = !isV210 || onlyNativeTokens
+  // Can sweep if: has tokens AND (doesn't need fee selector OR has fee options)
+  const canSweep = sweepableTokens.length > 0 && (!needsFeeSelector || feeTokenOptions.length > 0)
 
   const meeScanUrl = supertxHash ? `https://meescan.biconomy.io/details/${supertxHash}` : null
 
@@ -463,8 +481,8 @@ export const ManualSweeper: React.FC = () => {
                 </div>
               )}
 
-              {/* Fee Token Selector for v2.2.0 */}
-              {!isV210 && feeTokenOptions.length > 0 && (
+              {/* Fee Token Selector - shown for v2.2.0 or v2.1.0 with only native tokens */}
+              {needsFeeSelector && feeTokenOptions.length > 0 && (
                 <FeeTokenSelector
                   tokens={feeTokenOptions}
                   selectedTokenId={selectedFeeTokenId}

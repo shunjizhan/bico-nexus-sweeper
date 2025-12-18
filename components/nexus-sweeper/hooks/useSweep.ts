@@ -21,7 +21,8 @@ interface UseSweepParams {
   nexusAddress220: Address | null
   tokens210: Token[]
   tokens220: Token[]
-  selectedFeeToken220: Token | null
+  /** Fee token for v2.2.0 (always required) and v2.1.0 when only native tokens exist */
+  selectedFeeToken: Token | null
   onSweepSuccess: (entry: SweepHistoryEntry) => void
   onTokensRefresh: () => void
 }
@@ -42,7 +43,7 @@ export const useSweep = ({
   nexusAddress220,
   tokens210,
   tokens220,
-  selectedFeeToken220,
+  selectedFeeToken,
   onSweepSuccess,
   onTokensRefresh,
 }: UseSweepParams): UseSweepReturn => {
@@ -72,13 +73,18 @@ export const useSweep = ({
     const setSweepError = isV2 ? setSweepError220 : setSweepError210
     const setSupertxHash = isV2 ? setSupertxHash220 : setSupertxHash210
 
-    // For v2.2.0, check if fee token is selected and switch chain if needed
-    if (isV2) {
-      if (!selectedFeeToken220) {
+    // Check if only native tokens exist (no ERC20)
+    const hasErc20Tokens = tokens.some((t) => !t.isNative)
+    // Use EOA mode when: v2.2.0 (always) OR v2.1.0 with only native tokens
+    const useEoaMode = isV2 || !hasErc20Tokens
+
+    // For EOA mode, check if fee token is selected and switch chain if needed
+    if (useEoaMode) {
+      if (!selectedFeeToken) {
         setSweepError('Please select a fee token from your wallet.')
         return
       }
-      const feeTokenChainId = getChainIdFromDebankId(selectedFeeToken220.chain)
+      const feeTokenChainId = getChainIdFromDebankId(selectedFeeToken.chain)
       if (!feeTokenChainId) {
         setSweepError('Invalid fee token chain.')
         return
@@ -87,8 +93,7 @@ export const useSweep = ({
       if (currentChainId !== feeTokenChainId) {
         try {
           await switchChainAsync({ chainId: feeTokenChainId })
-          // After switching, user needs to click sweep again
-          return
+          // Continue with sweep after successful switch
         } catch {
           setSweepError('Failed to switch network. Please try again.')
           return
@@ -104,7 +109,17 @@ export const useSweep = ({
       const meeVersion = isV2 ? MEEVersion.V2_2_0 : MEEVersion.V2_1_0
 
       // Get unique chain IDs from tokens
-      const uniqueChainIds = [...new Set(tokens.map((t) => getChainIdFromDebankId(t.chain)).filter(isSupportedChainId))]
+      const tokenChainIds = tokens.map((t) => getChainIdFromDebankId(t.chain)).filter(isSupportedChainId)
+
+      // For EOA mode, also include the fee token's chain (needed for deployment lookup)
+      if (useEoaMode && selectedFeeToken) {
+        const feeChainId = getChainIdFromDebankId(selectedFeeToken.chain)
+        if (feeChainId && isSupportedChainId(feeChainId)) {
+          tokenChainIds.push(feeChainId)
+        }
+      }
+
+      const uniqueChainIds = [...new Set(tokenChainIds)]
 
       // Build chain configurations with Alchemy RPCs
       const chainConfigurations = uniqueChainIds.map((chainId) => {
@@ -150,23 +165,24 @@ export const useSweep = ({
 
       let hash: Hex
 
-      if (isV2 && selectedFeeToken220) {
-        // v2.2.0: Use getOnChainQuote with selected fee token as both trigger and fee token
-        const feeTokenChainId = getChainIdFromDebankId(selectedFeeToken220.chain)
+      if (useEoaMode && selectedFeeToken) {
+        // EOA trigger mode: v2.2.0 OR v2.1.0 with only native tokens
+        // Fee comes from EOA wallet, allowing full Nexus balance to be swept
+        const feeTokenChainId = getChainIdFromDebankId(selectedFeeToken.chain)
 
-        if (!feeTokenChainId || !selectedFeeToken220.tokenAddress) {
+        if (!feeTokenChainId || !selectedFeeToken.tokenAddress) {
           throw new Error('No valid fee token found')
         }
 
-        const onChainQuote = await meeClient.getOnChainQuote({
+        const onChainQuote = await meeClient.getFusionQuote({
           instructions,
           feeToken: {
-            address: selectedFeeToken220.tokenAddress,
+            address: selectedFeeToken.tokenAddress,
             chainId: feeTokenChainId,
           },
           trigger: {
             chainId: feeTokenChainId,
-            tokenAddress: selectedFeeToken220.tokenAddress,
+            tokenAddress: selectedFeeToken.tokenAddress,
             amount: 1n,
           },
         })
@@ -180,11 +196,10 @@ export const useSweep = ({
         const result = await meeClient.executeSignedQuote({ signedQuote })
         hash = result.hash
       } else {
-        // v2.1.0: Use regular getQuote + executeQuote (Smart Account mode)
-        // Prefer ERC20 tokens for fee to avoid conflict when native token is both fee and being swept
-        // (Native sweep uses fixed amount, but MEE deducts fees first, causing insufficient balance)
+        // Smart Account mode: v2.1.0 with ERC20 tokens available
+        // Use first ERC20 token as fee (sorted by USD value from DeBank)
         const erc20Tokens = tokens.filter((t) => !t.isNative)
-        const feeToken = erc20Tokens.length > 0 ? erc20Tokens[0] : tokens[0]
+        const feeToken = erc20Tokens[0]
         const feeChainId = getChainIdFromDebankId(feeToken.chain)
 
         if (!feeChainId || !feeToken.tokenAddress) {
@@ -228,7 +243,7 @@ export const useSweep = ({
       setSweepState('error')
       setSweepError(error instanceof Error ? error.message : 'Sweep failed. Please try again.')
     }
-  }, [walletClient, nexusAddress210, nexusAddress220, walletAddress, tokens210, tokens220, selectedFeeToken220, currentChainId, switchChainAsync, onSweepSuccess, onTokensRefresh])
+  }, [walletClient, nexusAddress210, nexusAddress220, walletAddress, tokens210, tokens220, selectedFeeToken, currentChainId, switchChainAsync, onSweepSuccess, onTokensRefresh])
 
   // Reset sweep states when wallet disconnects or changes
   React.useEffect(() => {

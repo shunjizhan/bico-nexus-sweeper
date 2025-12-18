@@ -66,3 +66,4 @@ export const getNativeTokenInfo = (chainId: number): { symbol: string; name: str
   const info = nativeTokens[chainId] ?? { symbol: 'ETH', name: 'Native Token' }
   return { ...info, decimals: 18 }
 }
+

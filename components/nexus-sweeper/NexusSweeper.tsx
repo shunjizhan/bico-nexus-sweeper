@@ -41,6 +41,23 @@ export const NexusSweeper: React.FC = () => {
 
   const { sweepHistory, addEntry } = useSweepHistory()
 
+  // Get data for selected version
+  const isV210 = selectedVersion === '2.1.0'
+  const nexusAddress = isV210 ? nexusAddress210 : nexusAddress220
+  const tokens = isV210 ? tokens210 : tokens220
+
+  // Check if v2.1.0 has only native tokens (needs EOA fee token like v2.2.0)
+  const v210OnlyNative = tokens210.length > 0 && tokens210.every((t) => t.isNative)
+  // Show fee selector when: v2.2.0 OR v2.1.0 with only native tokens
+  const needsFeeSelector = !isV210 || v210OnlyNative
+
+  // Filter fee token options to only show tokens from the same chains as dust tokens
+  const filteredFeeTokenOptions = React.useMemo(() => {
+    if (!needsFeeSelector || tokens.length === 0) return feeTokenOptions220
+    const dustChains = new Set(tokens.map((t) => t.chain))
+    return feeTokenOptions220.filter((feeToken) => dustChains.has(feeToken.chain))
+  }, [needsFeeSelector, tokens, feeTokenOptions220])
+
   const {
     sweepState210,
     sweepError210,
@@ -55,15 +72,11 @@ export const NexusSweeper: React.FC = () => {
     nexusAddress220,
     tokens210,
     tokens220,
-    selectedFeeToken220,
+    selectedFeeToken: selectedFeeToken220, // Used for v2.2.0 and v2.1.0 native-only
     onSweepSuccess: addEntry,
     onTokensRefresh: fetchTokens,
   })
 
-  // Get data for selected version
-  const isV210 = selectedVersion === '2.1.0'
-  const nexusAddress = isV210 ? nexusAddress210 : nexusAddress220
-  const tokens = isV210 ? tokens210 : tokens220
   const sweepState = isV210 ? sweepState210 : sweepState220
   const sweepError = isV210 ? sweepError210 : sweepError220
   const supertxHash = isV210 ? supertxHash210 : supertxHash220
@@ -147,10 +160,10 @@ export const NexusSweeper: React.FC = () => {
       <SweepSection
         version={selectedVersion}
         tokens={tokens}
-        canSweep={isV210 ? tokens.length > 0 : tokens.length > 0 && feeTokenOptions220.length > 0}
-        feeTokenOptions={isV210 ? undefined : feeTokenOptions220}
-        selectedFeeTokenId={isV210 ? undefined : selectedFeeTokenId220}
-        onFeeTokenChange={isV210 ? undefined : setSelectedFeeTokenId220}
+        canSweep={needsFeeSelector ? tokens.length > 0 && feeTokenOptions220.length > 0 : tokens.length > 0}
+        feeTokenOptions={needsFeeSelector ? feeTokenOptions220 : undefined}
+        selectedFeeTokenId={needsFeeSelector ? selectedFeeTokenId220 : undefined}
+        onFeeTokenChange={needsFeeSelector ? setSelectedFeeTokenId220 : undefined}
         loading={loadingTokens}
         error={tokenError}
         sweepState={sweepState}

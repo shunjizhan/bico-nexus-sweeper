@@ -132,8 +132,8 @@ export const SweepSection: React.FC<SweepSectionProps> = ({
               </div>
             )}
 
-            {/* Fee Token Selector for v2.2.0 */}
-            {isV2 && feeTokenOptions && feeTokenOptions.length > 0 && onFeeTokenChange && (
+            {/* Fee Token Selector - shown when feeTokenOptions is provided */}
+            {feeTokenOptions && feeTokenOptions.length > 0 && onFeeTokenChange && (
               <FeeTokenSelector
                 tokens={feeTokenOptions}
                 selectedTokenId={selectedFeeTokenId}

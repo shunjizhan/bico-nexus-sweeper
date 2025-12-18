@@ -2,14 +2,14 @@
  * Shared sweep utilities for building supertransaction instructions
  * Used by both auto mode (main page) and manual mode
  */
-import { parseUnits, type Address } from 'viem'
+import { formatUnits, parseUnits, type Address } from 'viem'
 import {
   runtimeERC20BalanceOf,
   type MultichainSmartAccount,
   type InstructionLike,
 } from '@biconomy/abstractjs'
 
-import { ETH_FORWARDER, encodeForwardCall, isNativeToken } from './native'
+import { isNativeToken } from './native'
 
 /**
  * Normalized token type for sweep operations
@@ -19,8 +19,7 @@ export interface SweepToken {
   chainId: number
   address: Address
   isNative: boolean
-  // For native tokens: amount in human-readable format (e.g., "0.001")
-  // For ERC20 tokens: not used (we use runtimeERC20BalanceOf)
+  /** Human-readable amount (e.g., "0.1" for 0.1 ETH) - required for native tokens */
   amount?: string
   decimals?: number
 }
@@ -67,10 +66,8 @@ export const fromTokenInfo = (
     chainId: token.chainId,
     address: token.address,
     isNative: token.isNative,
-    // Convert balance (bigint wei) to human-readable string
-    // We do this because buildSweepInstructions will convert back to wei
-    // This ensures consistent handling between auto and manual modes
-    amount: (Number(token.balance) / Math.pow(10, token.decimals)).toString(),
+    // Use formatUnits to avoid precision loss when converting bigint to string
+    amount: formatUnits(token.balance, token.decimals),
     decimals: token.decimals,
   }
 }
@@ -78,6 +75,12 @@ export const fromTokenInfo = (
 /**
  * Build sweep instructions for a list of tokens
  * This is the shared logic used by both auto and manual modes
+ *
+ * For native tokens: uses fixed amount (full balance)
+ * For ERC20 tokens: uses runtimeERC20BalanceOf (balance at execution time)
+ *
+ * Note: When only native tokens exist, callers should use EOA trigger mode
+ * so that fees come from EOA wallet, allowing full native balance to be swept.
  */
 export const buildSweepInstructions = async (
   nexusAccount: MultichainSmartAccount,
@@ -91,28 +94,25 @@ export const buildSweepInstructions = async (
     if (!nexusAddr) continue
 
     if (token.isNative) {
-      // Native token - use rawCalldata type with ETH_FORWARDER
+      // Native token - use fixed amount
       if (!token.amount || !token.decimals) {
         console.warn('Native token missing amount or decimals, skipping')
         continue
       }
 
-      // Convert human-readable amount to wei
-      const nativeAmount = parseUnits(token.amount, token.decimals)
-      if (nativeAmount <= 0n) {
+      const sweepAmount = parseUnits(token.amount, token.decimals)
+      if (sweepAmount <= 0n) {
         console.warn('Native token has zero balance, skipping')
         continue
       }
 
-      const calldata = encodeForwardCall(recipient)
       const instruction = await nexusAccount.buildComposable({
-        type: 'rawCalldata',
+        type: 'nativeTokenTransfer',
         data: {
-          to: ETH_FORWARDER,
-          calldata,
+          to: recipient,
+          value: sweepAmount,
           chainId: token.chainId,
-          value: nativeAmount,
-          gasLimit: 300000n,
+          gasLimit: 100000n,
         },
       })
       instructions.push(instruction)
