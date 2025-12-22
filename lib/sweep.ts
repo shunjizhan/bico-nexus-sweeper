@@ -100,7 +100,7 @@ export const buildSweepInstructions = async (
         continue
       }
 
-      const sweepAmount = parseUnits(token.amount, token.decimals)
+      const sweepAmount = parseUnits(token.amount, token.decimals) * 99n / 100n;  // sometimes provider returns more than the balance, so we need to subtract 1% to make sure we don't sweep more than the balance
       if (sweepAmount <= 0n) {
         console.warn('Native token has zero balance, skipping')
         continue
@@ -112,7 +112,7 @@ export const buildSweepInstructions = async (
           to: recipient,
           value: sweepAmount,
           chainId: token.chainId,
-          gasLimit: 100000n,
+          gasLimit: 200000n,
         },
       })
       instructions.push(instruction)

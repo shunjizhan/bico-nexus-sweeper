@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useAccount, useChainId, useSwitchChain, useWalletClient } from 'wagmi'
-import { http, type Address, type Hex } from 'viem'
+import { createPublicClient, http, type Address, type Hex } from 'viem'
 import { ArrowDown, ExternalLink, Loader2, Wallet } from 'lucide-react'
 import {
   MEEVersion,
@@ -232,10 +232,28 @@ export const ManualSweeper: React.FC = () => {
         account: nexusAccount,
       })
 
+      // Refetch native token balances to get the latest values
+      // (ERC20 tokens use runtimeERC20BalanceOf which handles this at execution time)
+      const updatedTokens = await Promise.all(
+        tokensToSweep
+          .filter((t) => isSupportedChainId(t.chainId))
+          .map(async (token) => {
+            if (token.isNative) {
+              // Refetch native balance to get the latest value
+              const chain = SUPPORTED_CHAINS.find((c) => c.id === token.chainId)!
+              const client = createPublicClient({
+                chain,
+                transport: http(getRpcUrl(token.chainId)),
+              })
+              const latestBalance = await client.getBalance({ address: nexusAddress })
+              return { ...token, balance: latestBalance }
+            }
+            return token
+          })
+      )
+
       // Convert manual tokens to normalized SweepToken format
-      const sweepTokens: SweepToken[] = tokensToSweep
-        .filter((t) => isSupportedChainId(t.chainId))
-        .map((token) => fromTokenInfo(token))
+      const sweepTokens: SweepToken[] = updatedTokens.map((token) => fromTokenInfo(token))
 
       // Build sweep instructions using shared utility (same as auto mode)
       const instructions = await buildSweepInstructions(
